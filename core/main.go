@@ -1,10 +1,9 @@
-package main
+package core
 
 import (
 	"crypto/elliptic"
 	"encoding/json"
 	"errors"
-	"flag"
 	"io"
 	"log"
 	"math"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"sync"
@@ -89,11 +87,8 @@ var (
 	RawPingBuffer            []byte
 	KeepAliveBuffer          []byte
 	SwitchingRoutersBuffer   []byte
-	// PORTMAPPER_KILL          chan byte
-	// PORTMAPPER_KILL_COMPLETE chan byte
-	// PORTMAPPER_PANIC         chan byte
-	INTERFACE_IP net.IP
-	E            = elliptic.P521()
+	INTERFACE_IP             net.IP
+	E                        = elliptic.P521()
 )
 
 func GeneratePortAllocation() (err error) {
@@ -150,16 +145,9 @@ func GeneratePortAllocation() (err error) {
 		currentPort = PR.EndPort + 1
 	}
 
-	// for _, pm := range PORT_TO_CLIENT_MAPPING {
-	// 	if pm != nil {
-	// 		log.Println(pm.StartPort, pm.EndPort)
-	// 	}
-	// }
-
 	return nil
 }
 
-// var AVAILABLE_PORTS []*PORT_RANGE
 var (
 	CLIENT_PORT_MAPPINGS   [10000]*CLIENT_PORT_MAPPING
 	CLIENT_LOCK            = sync.Mutex{}
@@ -171,11 +159,6 @@ type PORT_RANGE struct {
 	EndPort   uint16
 	Client    *CLIENT_PORT_MAPPING
 }
-
-//type PACKET struct {
-//	// Length int
-//	Data []byte
-//}
 
 type CLIENT_PORT_MAPPING struct {
 	UUID       string
@@ -200,25 +183,7 @@ type SocketProcessorSignal struct {
 	UUID string
 }
 
-func main() {
-	defer func() {
-		helpers.BasicRecover()
-		LOG_INFO("SLEEPING FOR 10 SECONDS BEFORE EXITING", nil)
-		time.Sleep(10 * time.Second)
-		LOG_INFO("NODE EXITED", nil)
-	}()
-
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
-	flag.StringVar(&RouterIP, "routerIP", "routerIP", "The node will fetch the config from this IP (optional)")
-
-	flag.StringVar(&APIKey, "apiKey", "apiKey", "Device API key")
-	flag.Parse()
-
-	if APIKey == "" {
-		C.APIKey = "00000000-0000-0000-0000-000000000000"
-	}
-
+func Start() {
 	if RouterIP == "" {
 		for _, v := range structs.RouterList {
 			if v == nil {
@@ -534,264 +499,3 @@ func GetNodeConfig(IP string) (C *structs.Node, err error) {
 
 	return
 }
-
-// func GET_MEM() {
-// 	S.MEMStats, _ = mem.VirtualMemory()
-// }
-
-// func SCRAPE_SYSTEM_STATS() {
-// 	GET_MEM()
-// 	cp, _ := cpu.Info()
-// 	S.CPUStats = &cp[0]
-// 	S.CPUCoreCount = 0
-// 	for _, v := range cp {
-// 		S.CPUCoreCount += v.Cores
-// 	}
-// 	S.HOSTStats, _ = host.Info()
-// 	// S.HOSTStats.HostID = strings.Replace(S.HOSTStats.HostID, "-", "", -1)
-// }
-
-// func create_info_buffer() (infoBytes []byte) {
-// 	SCRAPE_SYSTEM_STATS()
-// 	infoBytes = make([]byte, 0)
-// 	// log.Println(S.HOSTStats.HostID)   // 32 bytes
-// 	log.Println(S.HOSTStats.BootTime) // 8 bytes
-// 	log.Println(S.MEMStats.Free)      // 8 bytes
-// 	log.Println(S.CPUStats.Cores)     // 4 bytes
-
-// 	HID := [32]byte{}
-// 	infoBytes = append(infoBytes, HID[:]...) // 0-31
-// 	infoBytes = append(infoBytes, make([]byte, 20)...)
-// 	binary.BigEndian.PutUint64(infoBytes[32:40], S.HOSTStats.Uptime)             // 32-39
-// 	binary.BigEndian.PutUint64(infoBytes[40:48], uint64(S.MEMStats.UsedPercent)) // 40-47
-// 	binary.BigEndian.PutUint32(infoBytes[48:52], uint32(S.CPUCoreCount))         // 48-51
-
-// 	return
-// }
-
-// func REFRESH_ROUTER_LIST(oneTimeOnly bool) (err error) {
-// 	defer func() {
-// 		if r := recover(); r != nil {
-// 			log.Println(r, string(debug.Stack()))
-// 		}
-
-// 		if !oneTimeOnly {
-// 			time.Sleep(60 * time.Second)
-// 			RoutineWatcher <- 1
-// 		}
-// 	}()
-
-// 	LastNodeIPListRefresh = time.Now()
-
-// 	ipList, err := CloudFlareResolver.LookupHost(context.Background(), C.DefaultRouterLookupDomain)
-// 	if err != nil {
-// 		log.Println(err)
-// 		ipList, err = GoogleResolver.LookupHost(context.Background(), C.DefaultRouterLookupDomain)
-// 		// ipList, err = net.LookupIP(C.DefaultRouterLookupDomain)
-// 		if err != nil {
-// 			log.Println("@@@@@@@@@@@@@@@@@@ COULD NOT GET ROUTER LIST", err)
-// 			time.Sleep(10 * time.Second)
-// 			return
-// 		}
-// 	}
-
-// 	var already_in_list bool
-// 	var R *structs.AP_ROUTER
-// 	var addedCount int
-// 	for _, v := range ipList {
-// 		already_in_list = false
-// 		for i := range RouterList {
-// 			if RouterList[i] == nil {
-// 				continue
-// 			}
-// 			if RouterList[i].PublicIP == v {
-// 				already_in_list = true
-// 			}
-// 		}
-
-// 		if !already_in_list {
-// 			log.Println("NEW IP:", v)
-// 			R = new(structs.AP_ROUTER)
-// 			R.PublicIP = v
-// 			R.Port = strconv.Itoa(C.DefaultRouterPort)
-// 			// N.KillChan = make(chan byte, 10)
-// 			R.MS = defaultMS
-// 			R.LastPing = time.Now()
-// 			R.TimeoutForSeconds = 0
-// 			R.REGISTERED = false
-// 			R.OK_TO_USE = false
-
-// 			for i := 0; i < len(RouterList); i++ {
-// 				if RouterList[i] == nil {
-// 					RouterList[i] = R
-// 					addedCount++
-// 					break
-// 				}
-// 			}
-
-// 		}
-// 	}
-
-// 	log.Println("TOTAL ROUTERS ADDED:", addedCount)
-// 	return nil
-// }
-
-//func HandleData(buf []byte, numRead int) {
-//	// var flow gopacket.Flow
-//
-//	packet1 := gopacket.NewPacket(buf[:numRead], layers.LayerTypeIPv4, gopacket.Default)
-//	trans := packet1.TransportLayer()
-//	// log.Println(trans.TransportFlow().Src().String())
-//	if trans != nil {
-//		// log.Println(trans.TransportFlow())
-//		// flow = trans.TransportFlow()
-//		// P := flow.Src().String()
-//		if trans.TransportFlow().Src().String() == "53" {
-//			// }
-//			// if P == "53" {
-//			log.Println("========= REPLY ============\n", packet1, "\n", "\n=====================================")
-//			// if CURR_SOCK != nil {
-//			// 	CURR_SOCK.Write(buf[:numRead])
-//			// }
-//		}
-//	}
-//}
-
-//func RELEASE_PORTS() {
-//	defer func() {
-//		if r := recover(); r != nil {
-//			log.Println(r, string(debug.Stack()))
-//		}
-//		RoutineWatcher <- 6
-//	}()
-//
-//	WO := new(graph.AP_WalkObject)
-//	WO.Tag = "RELEASE_PORT"
-//	WO.TimeThreshold = 1000
-//	WO.Action = func(WO *graph.AP_WalkObject, e6 *graph.E6) {
-//		// if I != nil {
-//		// 	if time.Since(I.LastActivity).Seconds() > 120 {
-//		// 		// log.Println("  ------------ RELEASING MAPPING FOR PORT:", e6.I)
-//		// 		// M = nil
-//		// 		// I = nil
-//		// 	}
-//		// }
-//	}
-//
-//	for {
-//		time.Sleep(2 * time.Second)
-//		graph.AP_NEW_WALK(WO)
-//	}
-//}
-//
-//func GENERAL_VALIDATION_AND_NOTIFICATIONS() {
-//	// log.Println("===================")
-//	// log.Println("===================")
-//	// log.Println("DEFAULT UDP CONNECTION TIMEOUT: ", C.UDPTimeoutInSeconds)
-//	// log.Println("DEFAULT BANDWITH PER CLIENT (Mbps): ", C.CLIENTS.MAXBandwidthPerClientInMbps)
-//	// log.Println("DEFAULT ROUTER LOOKUP DOMAIN: ", C.DefaultRouterLookupDomain)
-//	// log.Println("DEFAULT UDP ROUTER PORT: ", C.DefaultRouterPort)
-//	// log.Println("===================")
-//	// log.Println("===================")
-//	// log.Println("===================")
-//}
-
-// func GENERATE_AVAILABLE_USER_PORTS() {
-
-// 	var tunnelEndPort = C.UDPTunnelStartPort + 10
-// 	for i := 0; i < math.MaxUint16; i++ {
-// 		if i < int(C.CLIENTS.StartPort) {
-// 			C.CLIENTS.AvailableClientPorts[uint16(i)] = false
-// 			continue
-// 		}
-
-// 		if i >= C.UDPTunnelStartPort && i <= tunnelEndPort {
-// 			C.CLIENTS.AvailableClientPorts[uint16(i)] = false
-// 			continue
-// 		}
-
-// 		if i == C.DefaultRouterPort {
-// 			C.CLIENTS.AvailableClientPorts[uint16(i)] = false
-// 			continue
-// 		}
-
-// 		C.CLIENTS.AvailableClientPorts[uint16(i)] = true
-// 	}
-// }
-
-// func GENERATE_PORT_SLOTS_v3() {
-
-// 	structs.AP_PM.AllocationChannel = make(chan *structs.AP_PORT_SLOT, 100000)
-
-// 	var totalClientsInt int = int(C.CLIENTS.TotalClients)
-// 	var portsPerClientInt int = int(C.CLIENTS.PortPerClient)
-
-// 	for i := 0; i < totalClientsInt; i++ {
-// 		newSlot := new(structs.AP_PORT_SLOT)
-// 		// newSlot.StartPort = uint16(currentPort)
-// 		// newSlot.EndPort = newSlot.StartPort + uint16(C.CLIENTS.PortPerClient) - 1 // -1 to represent the actual index numbers and not a count
-// 		var allocatedPorts int = 0
-// 		for ii := range C.CLIENTS.AvailableClientPorts {
-// 			if !C.CLIENTS.AvailableClientPorts[ii] {
-// 				continue
-// 			}
-// 			newSlot.Ports = append(newSlot.Ports, uint16(ii))
-// 			structs.AP_PORT_TO_SLOTS[ii] = newSlot
-
-// 			go LAUNCH_CLIENT_UDP_INGRESS_LISTENER(strconv.Itoa(ii))
-// 			C.CLIENTS.AvailableClientPorts[ii] = false
-// 			// newSlot.MappablePorts[ii] = new(structs.PORT_MAPPING)
-// 			// newSlot.MappablePorts[ii].Available = true
-// 			// newSlot.MappablePorts[ii].PORT = uint16(ii)
-
-// 			// currentPort++
-// 			allocatedPorts++
-// 			if allocatedPorts == portsPerClientInt {
-// 				break
-// 			}
-// 		}
-
-// 		// log.Println("ALLOCATING SLOT", i, ">> PORTS >>", newSlot.Ports)
-// 		structs.AP_PM.Slots = append(structs.AP_PM.Slots, newSlot)
-// 		structs.AP_PM.AllocationChannel <- newSlot
-// 	}
-// }
-
-// func PROCESS_TIMEOUTS() {
-// 	defer func() {
-// 		if r := recover(); r != nil {
-// 			log.Println(r, string(debug.Stack()))
-// 		}
-// 		RoutineWatcher <- 7
-// 	}()
-
-// 	for i := range structs.AP_PM.Slots {
-// 		slot := structs.AP_PM.Slots[i]
-// 		var mostInactivePortTimer float64 = 0
-// 		var mostInactiveIndex int = 0
-
-// 		for ii := range slot.MappablePorts {
-// 			if slot.MappablePorts[ii] == nil {
-// 				continue
-// 			}
-
-// 			timeLeft := time.Since(slot.MappablePorts[ii].LastActivity).Seconds()
-// 			if timeLeft > 130 {
-// 				slot.PortAllocationLock.Lock()
-// 				slot.SourcePorts[slot.MappablePorts[ii].SOURCE] = nil
-// 				slot.MappablePorts[ii].Available = true
-// 				slot.PortAllocationLock.Unlock()
-// 				continue
-// 			}
-
-// 			if timeLeft > mostInactivePortTimer {
-// 				mostInactivePortTimer = timeLeft
-// 				mostInactiveIndex = ii
-// 			}
-
-// 		}
-
-// 		slot.MappablePortWithOldestTime = uint16(mostInactiveIndex)
-
-// 	}
-// }

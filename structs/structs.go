@@ -123,15 +123,6 @@ type NodeConnectRequest struct {
 	APIKey string
 }
 
-//	type DEVICE_ROUTER struct {
-//		Port                    string
-//		PublicIP                string `bson:"PublicIP"`
-//		TCPControllerConnection net.Conn
-//		ERS                     *tcpcrypt.SocketWrapper
-//
-//		ConnectionAttempts int `json:"-" bson:"-"`
-//		LastPing           time.Time
-//	}
 type Route struct {
 	Address string
 	Metric  string
