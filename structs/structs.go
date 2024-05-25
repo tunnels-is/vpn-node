@@ -43,16 +43,26 @@ type Router struct {
 	Lock  sync.Mutex `json:"-" bson:"-"`
 }
 
-type NewNodeSocketAllocationRequest struct {
-	UUID        string             `json:",omitempty"`
-	Version     int                `json:"Version"`
-	Type        tcpcrypt.EncType   `json:"Type"`
-	RouterIP    string             `json:"RouterIP,omitempty"`
-	RouterPort  string             `json:"RouterPort,omitempty"`
-	InterfaceIP net.IP             `json:"InterfaceIP"`
-	StartPort   uint16             `json:"StartPort"`
-	EndPort     uint16             `json:"EndPort"`
-	NodeID      primitive.ObjectID `json:"NodeID"`
+type ClientConnectRequest struct {
+	Version  int
+	Username string
+	Password string
+	EncType  tcpcrypt.EncType
+	// maybe add more setting later ???
+}
+
+type Session struct {
+	UUID        string           `json:",omitempty"`
+	Version     int              `json:"Version"`
+	Type        tcpcrypt.EncType `json:"Type"`
+	InterfaceIP net.IP           `json:"InterfaceIP"`
+	StartPort   uint16           `json:"StartPort"`
+	EndPort     uint16           `json:"EndPort"`
+}
+
+type FullConnectResponse struct {
+	Node    *Node
+	Session *Session
 }
 
 type Node struct {
@@ -74,7 +84,7 @@ type Node struct {
 	LastPing                time.Time               `json:"-" bson:"-"`
 
 	// Not used now but might be later
-	Port string `json:"Port" bson:"Port"`
+	Port int `json:"Port" bson:"Port"`
 	// CONNECTION / NETWORK CONFIGURATIONS
 	Country            string                   `json:"Country" bson:"Country"`
 	InterfaceIP        string                   `json:"InterfaceIP" bson:"InterfaceIP"`

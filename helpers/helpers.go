@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/tunnels-is/vpn-node/logging"
+	"github.com/tunnels-is/vpn-node/structs"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -149,4 +153,127 @@ func SendRequestToController(
 	}
 
 	return nil, x, resp.StatusCode
+}
+
+func ReadLengthBytesAndDataFromSocket(CONN net.Conn, TunnelBuffer []byte) (DL uint16, err error) {
+	var n int
+	n, err = io.ReadAtLeast(CONN, TunnelBuffer[0:2], 2)
+	if err != nil {
+		logging.ERROR(3, "TUNNEL READER ERROR: ", err)
+		return
+	}
+
+	if n != 2 {
+		logging.ERROR(3, "TUNNEL SMALL READ ERROR: ", CONN.RemoteAddr())
+		err = errors.New("")
+		return
+	}
+
+	DL = binary.BigEndian.Uint16(TunnelBuffer[0:2])
+
+	if DL > 0 {
+		n, err = io.ReadAtLeast(CONN, TunnelBuffer[2:2+DL], int(DL))
+		if err != nil {
+			logging.ERROR(3, "TUNNEL DATA READ ERROR: ", err)
+			return
+		}
+	}
+
+	return
+}
+
+func ReadAuthConfig(path string) (Auth map[string]string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	Auth = make(map[string]string)
+	err = json.Unmarshal(b, &Auth)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func ReadNodeConfig(path string) (C *structs.Node) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	C = new(structs.Node)
+	err = json.Unmarshal(b, C)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func RemoveUser(user, configPath string) {
+	ac := ReadAuthConfig(configPath)
+	if ac == nil {
+		panic("unable to read config path")
+	}
+	_, ok := ac[user]
+	if !ok {
+		return
+	}
+
+	delete(ac, user)
+
+	outb, err := json.Marshal(&ac)
+	if err != nil {
+		panic("unable to marshal config:" + err.Error())
+	}
+
+	s, _ := os.Stat(configPath)
+
+	fm := os.FileMode(0o777)
+	if s != nil {
+		fm = s.Mode()
+	}
+
+	err = os.WriteFile(configPath, outb, fm)
+	if err != nil {
+		panic("unable to save user config:" + err.Error())
+	}
+}
+
+func CreateNewUserAndPassword(user, pass, configPath string) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(pass), 13)
+	if err != nil {
+		panic("unable to bcrypt password: " + err.Error())
+	}
+
+	var ac map[string]string
+	s, err := os.Stat(configPath)
+	if err != nil || s == nil {
+
+		ac = make(map[string]string)
+		ac[user] = string(hash)
+
+	} else {
+
+		ac = ReadAuthConfig(configPath)
+		if ac == nil {
+			panic("unable to read config path")
+		}
+
+		ac[user] = string(hash)
+	}
+
+	outb, err := json.Marshal(&ac)
+	if err != nil {
+		panic("unable to marshal config:" + err.Error())
+	}
+
+	fm := os.FileMode(0o777)
+	if s != nil {
+		fm = s.Mode()
+	}
+
+	err = os.WriteFile(configPath, outb, fm)
+	if err != nil {
+		panic("unable to save user config:" + err.Error())
+	}
 }

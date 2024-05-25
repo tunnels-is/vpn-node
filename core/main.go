@@ -2,7 +2,6 @@ package core
 
 import (
 	"crypto/elliptic"
-	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -12,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -41,16 +39,6 @@ func START_PPROF() {
 	http.ListenAndServe("0.0.0.0:63334", nil)
 }
 
-type ACCESS_POINT struct {
-	UDPRouterConnection *net.UDPConn
-	UDPRouterAddress    *net.UDPAddr
-}
-
-type TCPPacket struct {
-	PACKET []byte
-	FROM   net.IP
-}
-
 var (
 	ERR   = logging.ERROR
 	INFO  = logging.INFO
@@ -62,14 +50,14 @@ var (
 	LOG_DEBUG = logging.Debug
 	LOG_ADMIN = logging.Admin
 
-	APIKey   string
-	RouterIP string
+	NodeConfigPath string
+	AuthConfigPath string
 
-	C                    = new(structs.Node)
-	AR                   *structs.Router
+	Auth map[string]string
+	C    = new(structs.Node)
+	// AR                   *structs.Router
 	ControlSocketMonitor = make(chan byte, 100)
 
-	// KILLTunnelsChan     = make(chan byte, 20)
 	LastRouterSwitch    time.Time
 	RouterSwitchTimeout float64 = 30
 
@@ -109,7 +97,7 @@ func GeneratePortAllocation() (err error) {
 
 	currentPort := uint16(C.StartPort)
 
-	LOG_DEBUG("port allocations", nil, false, map[string]interface{}{
+	LOG_INFO("port allocations", map[string]interface{}{
 		"startPort":   C.StartPort,
 		"endPort":     C.EndPort,
 		"slots":       C.Slots,
@@ -161,8 +149,8 @@ type PORT_RANGE struct {
 }
 
 type CLIENT_PORT_MAPPING struct {
-	UUID       string
-	Version    int
+	UUID string
+	// Version    int
 	PORT_RANGE *PORT_RANGE
 	// TCP          chan []byte
 	// UDP          chan []byte
@@ -184,36 +172,21 @@ type SocketProcessorSignal struct {
 }
 
 func Start() {
-	if RouterIP == "" {
-		for _, v := range structs.RouterList {
-			if v == nil {
-				continue
-			}
-
-			config, err := GetNodeConfig(v.PublicIP)
-			if err != nil {
-				time.Sleep(1 * time.Second)
-			} else {
-				C = config
-				break
-			}
-		}
-	} else {
-		config, err := GetNodeConfig(RouterIP)
-		if err != nil {
-			time.Sleep(1 * time.Second)
-		} else {
-			C = config
-		}
-	}
+	var err error
+	Auth = helpers.ReadAuthConfig(AuthConfigPath)
+	C = helpers.ReadNodeConfig(NodeConfigPath)
 
 	logging.META["ID"] = C.ID.Hex()
 	logging.META["TAG"] = C.Tag
 	logging.META["RIP"] = C.RouterIP
 
-	err := GeneratePortAllocation()
+	err = GeneratePortAllocation()
 	if err != nil {
 		os.Exit(1)
+	}
+
+	if C.StartPort <= C.Port && C.Port <= C.EndPort {
+		panic("Port can not be between StartPort and EndPort")
 	}
 
 	INTERFACE_IP = net.ParseIP(C.InterfaceIP)
@@ -227,18 +200,13 @@ func Start() {
 	}
 	INTERFACE_IP = INTERFACE_IP.To4()
 
-	CREATE_ACTIVE_ROUTER(C.RouterIP)
-
 	RoutineWatcher <- 1
 	RoutineWatcher <- 2
 	RoutineWatcher <- 3
 	RoutineWatcher <- 4
 	RoutineWatcher <- 5
-	RoutineWatcher <- 7
-
-	// raw socket reader
 	RoutineWatcher <- 6
-	RoutineWatcher <- 17
+	RoutineWatcher <- 7
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
@@ -262,16 +230,18 @@ func Start() {
 			)
 			switch ID {
 			case 1:
-				go PingActiveController()
+				go UpdateConfigs()
 			case 2:
 				go PingActiveClients()
 			case 3:
+				go StartTCPControlListener()
 			case 4:
-				go InitializeRouterControlSocket()
+				go StartUDPControlListener()
+				// go InitializeRouterControlSocket()
 			case 5:
 			case 6:
 				go ReadFromRawTCPSocket()
-			case 17:
+			case 7:
 				go ReadFromRawUDPSocket()
 			default:
 				LOG_INFO(
@@ -295,10 +265,7 @@ func PingActiveClients() {
 			LOG_ERROR(
 				"active client ping routine closing",
 				err,
-				map[string]interface{}{
-					"publicIP":   AR.PublicIP,
-					"routerPort": C.RouterPort,
-				},
+				nil,
 			)
 		}
 
@@ -307,6 +274,7 @@ func PingActiveClients() {
 
 	for {
 		time.Sleep(10 * time.Second)
+		populatePingBufferWithStats()
 
 		for i := range CLIENT_PORT_MAPPINGS {
 			if CLIENT_PORT_MAPPINGS[i] == nil {
@@ -317,47 +285,10 @@ func PingActiveClients() {
 				NukeClient(CLIENT_PORT_MAPPINGS[i])
 				continue
 			}
+
 			select {
 			case CLIENT_PORT_MAPPINGS[i].Packets <- router.BUFFER_pingPong:
 			default:
-			}
-		}
-	}
-}
-
-func PingActiveController() {
-	var err error
-	defer func() {
-		helpers.BasicRecover()
-
-		if err != nil {
-			LOG_ERROR(
-				"active router ping routine closing",
-				err,
-				map[string]interface{}{
-					"publicIP":   AR.PublicIP,
-					"routerPort": C.RouterPort,
-				},
-			)
-		}
-
-		RoutineWatcher <- 1
-	}()
-
-	for {
-		populatePingBufferWithStats()
-		time.Sleep(9 * time.Second)
-
-		if AR != nil && AR.ERS != nil {
-
-			LOG_INFO("ping buffer", map[string]interface{}{
-				"ping": router.BUFFER_pingPong,
-			})
-
-			_, err = AR.ERS.Write(router.BUFFER_pingPong)
-			if err != nil {
-				AR.ERS.SOCKET.Close()
-				return
 			}
 		}
 	}
@@ -390,14 +321,7 @@ func populatePingBufferWithStats() {
 	router.BUFFER_pingPong[5] = 255
 }
 
-func CREATE_ACTIVE_ROUTER(IP string) {
-	AR = new(structs.Router)
-	AR.PublicIP = IP
-	AR.Port = strconv.Itoa(C.RouterPort)
-	AR.LastPing = time.Now()
-}
-
-func GetUpdatedDeviceConfig() {
+func UpdateConfigs() {
 	defer func() {
 		if r := recover(); r != nil {
 			INFO(3, r, string(debug.Stack()))
@@ -406,96 +330,14 @@ func GetUpdatedDeviceConfig() {
 	}()
 
 	for {
-		time.Sleep(60 * time.Second)
-
-		if AR == nil {
-			ERR(3, "Unable to get updated device config. No active router set")
-			continue
+		time.Sleep(30 * time.Second)
+		out := helpers.ReadNodeConfig(NodeConfigPath)
+		if out != nil {
+			C = out
 		}
-
-		config, err := GetNodeConfig(AR.PublicIP)
-		if err != nil {
-			continue
+		outA := helpers.ReadAuthConfig(AuthConfigPath)
+		if outA != nil {
+			Auth = outA
 		}
-
-		// Check if we need a reboot
-		needsReboot := false
-		if C.AvailableMbps != config.AvailableMbps {
-			needsReboot = true
-		}
-		if C.AvailableUserMbps != config.AvailableUserMbps {
-			needsReboot = true
-		}
-		if C.InterfaceIP != config.InterfaceIP {
-			needsReboot = true
-		}
-		if C.RouterIP != config.RouterIP {
-			needsReboot = true
-		}
-		if C.StartPort != config.StartPort {
-			needsReboot = true
-		}
-		if C.EndPort != config.EndPort {
-			needsReboot = true
-		}
-		if C.RouterPort != config.RouterPort {
-			needsReboot = true
-		}
-
-		if needsReboot {
-			os.Exit(1)
-		} else {
-			C = config
-			// apply new blocklist
-		}
-
 	}
-}
-
-func GetNodeConfig(IP string) (C *structs.Node, err error) {
-	log.Println("Fetching config from: ", IP)
-
-	C = new(structs.Node)
-	DF := new(structs.GetNodeConfig)
-	DF.APIKey = APIKey
-
-	err, resp, code := helpers.SendRequestToController(
-		IP,
-		"443",
-		"POST",
-		"v3/node/config",
-		DF,
-		5000,
-		true,
-	)
-	if err != nil || code != 200 {
-		LOG_ERROR(
-			"unable to get node config",
-			err,
-			map[string]interface{}{"respcode": code},
-		)
-		if err == nil {
-			return nil, errors.New("")
-		}
-		return
-	}
-
-	err = json.Unmarshal(resp, &C)
-	if err != nil {
-		LOG_ERROR(
-			"unable to marshal node config",
-			err,
-			map[string]interface{}{"respcode": code},
-		)
-		return nil, err
-	}
-
-	LOG_DEBUG(
-		"Got node config",
-		nil,
-		true,
-		map[string]interface{}{"config": C},
-	)
-
-	return
 }

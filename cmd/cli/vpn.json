@@ -1,0 +1,70 @@
+	{
+		"Tag": "my-node",
+		"Country": "IS",
+		"IP": "",
+		"InterfaceIP": "172.20.1.13",
+		"Port": 443,
+		"StartPort": 2000,
+		"EndPort": 65000,
+		"AvailableMbps": 100,
+		"AvailableUserMbps": 10,
+		"EncryptionProtocol": 3,
+		"InternetAccess": true,
+		"LocalNetworkAccess": true,
+		"Networks": [
+			{
+				"Nat": "192.168.0.1/32",
+				"Network": "172.20.1.13/24",
+				"Routes": [
+					{
+						"Address": "34.117.186.192/32",
+						"Metric": "0"
+					}
+				],
+				"Tag": "lan"
+			}
+		],
+		"DNSAllowCustomOnly": true,
+		"DNSServers": [
+			"1.1.1.1",
+			"8.8.8.8"
+		],
+		"DNS": [
+			{
+				"CNAME": "",
+				"Domain": "dns.node",
+				"IP": [
+					"1.1.1.1"
+				],
+				"TXT": [
+					"this is the niceland dns server @ raspberry pi"
+				],
+				"Wildcard": false
+			},
+			{
+				"CNAME": "",
+				"Domain": "ssh.node",
+				"IP": [
+					"127.0.0.1"
+				],
+				"TXT": [
+					"this is my home laptop"
+				],
+				"Wildcard": false
+			},
+			{
+				"CNAME": "",
+				"Domain": "cloudflare.com",
+				"IP": null,
+				"TXT": null,
+				"Wildcard": false
+			},
+			{
+				"CNAME": "",
+				"Domain": "google.com",
+				"IP": null,
+				"TXT": null,
+				"Wildcard": false
+			}
+		]
+	}

@@ -3,13 +3,12 @@ module github.com/tunnels-is/vpn-node
 go 1.22.1
 
 require (
-	github.com/shirou/gopsutil v3.21.11+incompatible
+	github.com/google/uuid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.4
 	github.com/zveinn/tcpcrypt v0.0.3
 	github.com/zveinn/tunnels v0.0.4
 	go.mongodb.org/mongo-driver v1.15.0
 	golang.org/x/crypto v0.23.0
-	golang.org/x/net v0.25.0
 )
 
 require (
@@ -25,6 +24,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

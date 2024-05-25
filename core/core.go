@@ -3,21 +3,19 @@ package core
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net"
 	"runtime/debug"
-	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tunnels-is/vpn-node/helpers"
 	"github.com/tunnels-is/vpn-node/router"
 	"github.com/tunnels-is/vpn-node/structs"
 	"github.com/tunnels-is/vpn-node/transportfilter"
-	"github.com/zveinn/tcpcrypt"
 	"github.com/zveinn/tunnels"
 )
 
@@ -130,6 +128,7 @@ func ReadFromRawUDPSocket() {
 		// TODO -- simplify (probably use a mask)
 		IHL = ((buffer[0] << 4) >> 4) * 4
 		DSTP = binary.BigEndian.Uint16(buffer[IHL+2 : IHL+4])
+
 		PM = PORT_TO_CLIENT_MAPPING[DSTP]
 		if PM == nil || PM.Client == nil {
 			continue
@@ -278,110 +277,110 @@ func ReadFromRawTCPSocket() {
 	}
 }
 
-func InitializeRouterControlSocket() {
-	var err error
-	defer func() {
-		helpers.BasicRecover()
-		time.Sleep(500 * time.Millisecond)
-		if AR.TCPControllerConnection != nil {
-			AR.TCPControllerConnection.Close()
-			AR.TCPControllerConnection = nil
-		}
-
-		if err != nil {
-			LOG_ERROR(
-				"unable to connect to active router",
-				err,
-				map[string]interface{}{
-					"publicIP":   AR.PublicIP,
-					"routerPort": C.RouterPort,
-				},
-			)
-		}
-
-		RoutineWatcher <- 4
-	}()
-
-	if AR == nil {
-		return
-	}
-
-	AR.ConnectionAttempts++
-
-	AR.TCPControllerConnection, err = net.Dial("tcp", AR.PublicIP+":"+strconv.Itoa(C.RouterPort))
-	if err != nil {
-		return
-	}
-
-	_ = AR.TCPControllerConnection.SetWriteDeadline(time.Now().Add(20 * time.Second))
-
-	_, err = AR.TCPControllerConnection.Write(
-		[]byte{router.CODE_ConnectingToControlSocket, 0, 0},
-	)
-	if err != nil {
-		return
-	}
-
-	AR.ERS, err = tcpcrypt.NewSocketWrapper(AR.TCPControllerConnection, tcpcrypt.AES256)
-	if err != nil {
-		return
-	}
-
-	err = AR.ERS.InitHandshake()
-	if err != nil {
-		return
-	}
-
-	ConnectRequest := new(structs.NodeConnectRequest)
-	ConnectRequest.APIKey = C.APIKey
-
-	var CRBytes []byte
-	CRBytes, err = json.Marshal(ConnectRequest)
-	if err != nil {
-		return
-	}
-
-	_ = AR.TCPControllerConnection.SetWriteDeadline(time.Now().Add(20 * time.Second))
-
-	_, err = AR.ERS.Write(CRBytes)
-	if err != nil {
-		return
-	}
-
-	LOG_INFO(
-		"controller connected",
-		map[string]interface{}{
-			"publicIP":   AR.PublicIP,
-			"routerPort": AR.Port,
-		},
-	)
-
-	_ = AR.TCPControllerConnection.SetWriteDeadline(time.Time{})
-
-	var data []byte
-	for {
-		_ = AR.TCPControllerConnection.SetReadDeadline(
-			time.Now().Add(30 * time.Second),
-		)
-
-		_, data, err = AR.ERS.Read()
-		if err != nil {
-			// if errors.Is(err, os.ErrDeadlineExceeded) {
-			// }
-			return
-		}
-
-		LOG_INFO("read from router", map[string]interface{}{
-			"data": data,
-		})
-
-		if data[0] == router.CODE_InitializingPortAllocation {
-			CREATE_CLIENT_PORT_MAPPING(helpers.CopySlice(data[1:]))
-		} else if data[0] == router.CODE_pingPong {
-			AR.LastPing = time.Now()
-		}
-	}
-}
+// func InitializeRouterControlSocket() {
+// 	var err error
+// 	defer func() {
+// 		helpers.BasicRecover()
+// 		time.Sleep(500 * time.Millisecond)
+// 		if AR.TCPControllerConnection != nil {
+// 			AR.TCPControllerConnection.Close()
+// 			AR.TCPControllerConnection = nil
+// 		}
+//
+// 		if err != nil {
+// 			LOG_ERROR(
+// 				"unable to connect to active router",
+// 				err,
+// 				map[string]interface{}{
+// 					"publicIP":   AR.PublicIP,
+// 					"routerPort": C.RouterPort,
+// 				},
+// 			)
+// 		}
+//
+// 		RoutineWatcher <- 4
+// 	}()
+//
+// 	if AR == nil {
+// 		return
+// 	}
+//
+// 	AR.ConnectionAttempts++
+//
+// 	AR.TCPControllerConnection, err = net.Dial("tcp", AR.PublicIP+":"+strconv.Itoa(C.RouterPort))
+// 	if err != nil {
+// 		return
+// 	}
+//
+// 	_ = AR.TCPControllerConnection.SetWriteDeadline(time.Now().Add(20 * time.Second))
+//
+// 	_, err = AR.TCPControllerConnection.Write(
+// 		[]byte{router.CODE_ConnectingToControlSocket, 0, 0},
+// 	)
+// 	if err != nil {
+// 		return
+// 	}
+//
+// 	AR.ERS, err = tcpcrypt.NewSocketWrapper(AR.TCPControllerConnection, tcpcrypt.AES256)
+// 	if err != nil {
+// 		return
+// 	}
+//
+// 	err = AR.ERS.InitHandshake()
+// 	if err != nil {
+// 		return
+// 	}
+//
+// 	ConnectRequest := new(structs.NodeConnectRequest)
+// 	ConnectRequest.APIKey = C.APIKey
+//
+// 	var CRBytes []byte
+// 	CRBytes, err = json.Marshal(ConnectRequest)
+// 	if err != nil {
+// 		return
+// 	}
+//
+// 	_ = AR.TCPControllerConnection.SetWriteDeadline(time.Now().Add(20 * time.Second))
+//
+// 	_, err = AR.ERS.Write(CRBytes)
+// 	if err != nil {
+// 		return
+// 	}
+//
+// 	LOG_INFO(
+// 		"controller connected",
+// 		map[string]interface{}{
+// 			"publicIP":   AR.PublicIP,
+// 			"routerPort": AR.Port,
+// 		},
+// 	)
+//
+// 	_ = AR.TCPControllerConnection.SetWriteDeadline(time.Time{})
+//
+// 	var data []byte
+// 	for {
+// 		_ = AR.TCPControllerConnection.SetReadDeadline(
+// 			time.Now().Add(30 * time.Second),
+// 		)
+//
+// 		_, data, err = AR.ERS.Read()
+// 		if err != nil {
+// 			// if errors.Is(err, os.ErrDeadlineExceeded) {
+// 			// }
+// 			return
+// 		}
+//
+// 		LOG_INFO("read from router", map[string]interface{}{
+// 			"data": data,
+// 		})
+//
+// 		if data[0] == router.CODE_InitializingPortAllocation {
+// 			CREATE_CLIENT_PORT_MAPPING(helpers.CopySlice(data[1:]))
+// 		} else if data[0] == router.CODE_pingPong {
+// 			AR.LastPing = time.Now()
+// 		}
+// 	}
+// }
 
 func GetClientPortMapping(uuid string) *CLIENT_PORT_MAPPING {
 	for i := range CLIENT_PORT_MAPPINGS {
@@ -416,17 +415,14 @@ func CreateAndAssignClientPortMapping() (index int) {
 		"error when creating port mapping",
 		false,
 		nil,
-		map[string]interface{}{
-			"publicIP":   AR.PublicIP,
-			"routerPort": C.RouterPort,
-		},
+		nil,
 	)
 
 	for i := range CLIENT_PORT_MAPPINGS {
 		if CLIENT_PORT_MAPPINGS[i] == nil {
 			index = i
 			CLIENT_PORT_MAPPINGS[i] = new(CLIENT_PORT_MAPPING)
-			CLIENT_PORT_MAPPINGS[i].Packets = make(chan []byte, 100000)
+			CLIENT_PORT_MAPPINGS[i].Packets = make(chan []byte, 1000000)
 			CLIENT_PORT_MAPPINGS[i].LastPingFromClient = time.Now()
 			break
 		}
@@ -469,11 +465,13 @@ func HandleClientTunnelSocket(P *SocketProcessorSignal) {
 		if shouldRestart {
 			TUNNEL_PROCESSOR_MONITOR <- P
 		}
+		INFO(3, "CLIENT TUNNEL returning")
 	}()
 
 	CM := GetClientPortMapping(P.UUID)
 	if CM == nil {
 		shouldRestart = false
+		fmt.Println("NO MAPPING")
 		return
 	}
 	if CM.TunnelSocket == nil {
@@ -485,6 +483,7 @@ func HandleClientTunnelSocket(P *SocketProcessorSignal) {
 		if shouldRestart {
 			return
 		}
+		fmt.Println("NUKING CLIENAT")
 		NukeClient(CM)
 	}()
 
@@ -542,11 +541,12 @@ func ProcessUsersPackets(P *SocketProcessorSignal) {
 		if shouldRestart {
 			PACKET_PROCESSOR_MONITOR <- P
 		}
-		INFO(3, "CLIENT QUEUE returning")
+		INFO(3, "CLIENT PACKET PROCESSOR returning")
 	}()
 
 	CM := GetClientPortMapping(P.UUID)
 	if CM == nil {
+		fmt.Println("NO MAPPING")
 		shouldRestart = false
 		return
 	}
@@ -560,6 +560,7 @@ func ProcessUsersPackets(P *SocketProcessorSignal) {
 	for {
 		PACKET, ok = <-CM.Packets
 		if !ok {
+			fmt.Println("!ok on packet")
 			return
 		}
 		if PACKET[0] == router.CODE_pingPong {
@@ -593,26 +594,18 @@ func ProcessUsersPackets(P *SocketProcessorSignal) {
 	}
 }
 
-func CREATE_CLIENT_PORT_MAPPING(data []byte) {
+func CreatePortMapping(CCR *structs.ClientConnectRequest) (AllocR *structs.Session, CPM *CLIENT_PORT_MAPPING) {
 	defer func() {
 		if r := recover(); r != nil {
 			INFO(3, r, string(debug.Stack()))
 		}
 	}()
 
-	NSRequest := new(structs.NewNodeSocketAllocationRequest)
-	err := json.Unmarshal(data, NSRequest)
-	if err != nil {
-		INFO(3, "Broken diffie helman from client >> ", err)
-		return
-	}
-
 	index := CreateAndAssignClientPortMapping()
-	CLIENT_PORT_MAPPINGS[index].UUID = NSRequest.UUID
-	fmt.Println("VERSION FROM CLIENT: ", NSRequest.Version)
-	CLIENT_PORT_MAPPINGS[index].Version = NSRequest.Version
-
 	var PR *PORT_RANGE
+
+	AllocR = new(structs.Session)
+	AllocR.UUID = uuid.NewString()
 
 	for i := range PORT_TO_CLIENT_MAPPING {
 		if i < int(C.StartPort) {
@@ -623,103 +616,29 @@ func CREATE_CLIENT_PORT_MAPPING(data []byte) {
 			INFO(3, "PORT TO CLIENT MAPPING IS NIL: ", i)
 			continue
 		}
+
 		if PORT_TO_CLIENT_MAPPING[i].Client == nil {
+
 			PORT_TO_CLIENT_MAPPING[i].Client = CLIENT_PORT_MAPPINGS[index]
 			PR = PORT_TO_CLIENT_MAPPING[i]
+
 			CLIENT_PORT_MAPPINGS[index].PORT_RANGE = PORT_TO_CLIENT_MAPPING[i]
+			CLIENT_PORT_MAPPINGS[index].UUID = AllocR.UUID
+			CPM = CLIENT_PORT_MAPPINGS[index]
+
 			break
 		}
 	}
 
 	if PR == nil {
-		INFO(3, "CREATE_CLIENT_PORT_MAPPING >> ERROR >> unable to write to control socket >> ", err)
-		return
-		// if ROUTER != nil {
-		//_, err := ROUTER.TCPControllerConnection.Write(ERRORBuffer[:])
-		//if err != nil {
-		// ROUTER.TCPControllerConnection.Close()
-		// ROUTER.TCPControllerConnection = nil
-		//}
-		// }
-	}
-
-	if NSRequest.RouterPort == "" {
-		NSRequest.RouterPort = "443"
-	}
-
-	dialer := net.Dialer{Timeout: 5 * time.Second}
-	ROUTERConn, err := dialer.Dial("tcp4", NSRequest.RouterIP+":"+NSRequest.RouterPort)
-	if err != nil {
-		INFO(3, "CREATE_CLIENT_PORT_MAPPING >> unable to dial router >> ", err)
+		INFO(3, "UNABLE TO CREATE CLIENT MAPPING .. PR == nil")
 		return
 	}
 
-	tmp := make([]byte, 3)
-	tmp[0] = router.CODE_DeliveringUserSocket
-	binary.BigEndian.PutUint16(tmp[1:], uint16(len(NSRequest.UUID)))
-	_, err = ROUTERConn.Write(append(tmp, []byte(NSRequest.UUID)...))
-	if err != nil {
-		ERR(3, "unable to write nsrequest to router >> ", err)
-		return
-	}
+	AllocR.StartPort = PR.StartPort
+	AllocR.EndPort = PR.EndPort
+	AllocR.InterfaceIP = net.IP(INTERFACE_IP)
+	AllocR.Version = 1
 
-	CLIENT_PORT_MAPPINGS[index].TunnelSocket = ROUTERConn
-
-	// -------------------------------------------
-	// -------------------------------------------
-	//
-	// EXIT NODE TO USER HANDSHAKE INITIALIZATION
-	//
-	// -------------------------------------------
-	// -------------------------------------------
-	CLIENT_PORT_MAPPINGS[index].ES, err = tcpcrypt.NewSocketWrapper(
-		ROUTERConn,
-		NSRequest.Type)
-	if err != nil {
-		INFO(3, "unable to create encrypted socket, ", err)
-		return
-	}
-
-	err = CLIENT_PORT_MAPPINGS[index].ES.ReceiveHandshake()
-	if err != nil {
-		INFO(3, "unable to receive user handshake, ", err)
-		return
-	}
-
-	// CLEAR OUT USEFULL DATA BEFORE REPLYING
-	// fmt.Println("NSR:", NSRequest.InterfaceIP)
-	// fmt.Println("NSR:", INTERFACE_IP)
-	NSRequest.StartPort = PR.StartPort
-	NSRequest.EndPort = PR.EndPort
-	NSRequest.InterfaceIP = net.IP(INTERFACE_IP)
-	NSRequest.RouterIP = ""
-	NSRequest.RouterPort = ""
-	// NSRequest.UUID = ""
-	NSRequest.Type = 0
-
-	outBytes, err := json.Marshal(NSRequest)
-	if err != nil {
-		INFO(3, "unable to marshal NSRequest, ", err)
-		return
-	}
-
-	// outBuffer := make([]byte, math.MaxUint16)
-
-	_, err = CLIENT_PORT_MAPPINGS[index].ES.Write(outBytes)
-	if err != nil {
-		INFO(3, "unable to response to NSRequest, ", err)
-		return
-	}
-
-	// CLIENT_PORT_MAPPINGS[NSRequest.UUID].DataBuffer = xx[:]
-
-	go ProcessUsersPackets(&SocketProcessorSignal{
-		UUID: NSRequest.UUID,
-	})
-
-	go HandleClientTunnelSocket(&SocketProcessorSignal{
-		UUID: NSRequest.UUID,
-	})
-
-	INFO(3, "++++++++++++++ REPLYING TO PORT ALLOCATION >> ", NSRequest.UUID)
+	return
 }
